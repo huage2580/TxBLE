@@ -11,7 +11,6 @@ import android.util.Log;
 
 public class BytesPresenter {
     private static final String TAG = "BytesPresenter";
-    public volatile boolean needWatch=true;
 
     public void onRead(byte[] datas){
         Log.i(TAG, "onRead: "+hex2String(datas));

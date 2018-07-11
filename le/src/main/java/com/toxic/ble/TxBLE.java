@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * BLE
@@ -81,6 +83,20 @@ public class TxBLE {
     private HashMap<String,BytesPresenter> bytesPresenterMap = new HashMap<>();
 
     private SpinLock ioLock=new SpinLock();
+
+    /**
+     *
+     */
+    private Executor ioExecutor = Executors.newSingleThreadExecutor();
+    private Executor presenterExecutor = Executors.newFixedThreadPool(3);
+    /**
+     * 获取线程池来自行控制读写
+     * @return
+     */
+    public Executor getIoExecutor() {
+        return ioExecutor;
+    }
+
     /**
      * 获取实例，获取blueAdapter
      * @param autoEnabled 自动开启系统蓝牙
@@ -188,6 +204,11 @@ public class TxBLE {
         }
     }
 
+    /**
+     * 连接指定蓝牙设备
+     * @param device
+     */
+
     public void connectGatt(BluetoothDevice device){
         Log.i(TAG, "connectGatt: "+device.getAddress());
         mAdapter.stopLeScan(leScanCallBack);
@@ -195,15 +216,26 @@ public class TxBLE {
         mConnectDevice.connectGatt(mContext,false,gattCallBack);
     }
 
+    /**
+     * 读和写都应该在可控新线程，不要阻塞蓝牙的binder线程
+     * @param datas
+     */
     public void write(byte[] datas){
         ioLock.lock();
         mc.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         mc.setValue(datas);
         mGatt.writeCharacteristic(mc);
     }
+
+    /**
+     * 读和写都应该在可控新线程，不要阻塞蓝牙的binder线程
+     *
+     */
     public void read(){
+        ioLock.lock();
         mGatt.readCharacteristic(mc);
     }
+
 
     private BluetoothGattCharacteristic mc;
     private BluetoothGatt mGatt;
@@ -236,19 +268,28 @@ public class TxBLE {
                 }
             }
             if (connectCallBack!=null){
-                connectCallBack.connectDevice(mConnectDevice);
+                ioExecutor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectCallBack.connectDevice(mConnectDevice);
+                    }
+                });
             }
         }
 
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            ioLock.unlock();
             if (!characteristic.equals(mc)){
                 return;
             }
-            presenter.onRead(characteristic.getValue());
-            if (presenter.needWatch){
-                mGatt.readCharacteristic(mc);
-            }
+            final byte[] tmp = characteristic.getValue();
+            presenterExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    presenter.onRead(tmp);
+                }
+            });
         }
 
         @Override
@@ -257,7 +298,13 @@ public class TxBLE {
             if (!characteristic.equals(mc)){
                 return;
             }
-            presenter.onWrite(characteristic.getValue());
+            final byte[] tmp = characteristic.getValue();
+            presenterExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    presenter.onWrite(tmp);
+                }
+            });
         }
 
         @Override
@@ -265,7 +312,13 @@ public class TxBLE {
             if (!characteristic.equals(mc)){
                 return;
             }
-            presenter.onChanged(characteristic.getValue());
+            final byte[] tmp = characteristic.getValue();
+            presenterExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    presenter.onChanged(tmp);
+                }
+            });
         }
     };
 
@@ -276,7 +329,6 @@ public class TxBLE {
     public void switch2Characteristic(BluetoothGattCharacteristic newCharacteristic){
         mc=newCharacteristic;
         characteristicUUID = mc.getUuid().toString();
-        presenter.needWatch=false;
         if (bytesPresenterMap.containsKey(characteristicUUID)){
             presenter = bytesPresenterMap.get(characteristicUUID);
         }else {

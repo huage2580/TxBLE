@@ -8,8 +8,8 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -22,7 +22,6 @@ import com.toxic.ble.TxBLE;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
     public static String sss = "00008650-0000-1000-8000-00805f9b34fb";
@@ -83,7 +82,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void connectDevice(BluetoothDevice device) {
                         Main.btaddr=BtaddrToHex(device.getAddress());
-                        ble.read();
+                        while (true){
+                            ble.read();
+                        }
                     }
                 }).addBytesPresenter(ccc,new BytesPresenter(){
                     private String temp="";

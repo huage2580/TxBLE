@@ -30,6 +30,7 @@ public class TxBLE {
     private static final String TAG = "TxBLE";
     private Context mContext;
     private BluetoothAdapter mAdapter;
+    private HIDUtils hidUtils;
     /**
      * 搜索扫描过滤用的UUID
      */
@@ -96,6 +97,7 @@ public class TxBLE {
     private Executor writePresenterExecutor = Executors.newSingleThreadExecutor();
     private Executor notifyPresenterExecutor = Executors.newSingleThreadExecutor();
 
+    private List<BluetoothGattCharacteristic> characteristicList = new ArrayList<>();
     /**
      * 获取线程池来自行控制读写
      * @return
@@ -124,6 +126,7 @@ public class TxBLE {
     public TxBLE(Context context,BluetoothAdapter adapter) {
         mContext = context;
         mAdapter = adapter;
+        hidUtils = new HIDUtils(context);
         presenter = new BytesPresenter();
     }
 
@@ -204,6 +207,19 @@ public class TxBLE {
                 }
             }
         };
+        //系统连接的HID设备
+        hidUtils.getHidConncetList(new ScanCallBack() {
+            @Override
+            public boolean onScan(BluetoothDevice device) {
+                boolean canConnect = TxBLE.this.mScanCallBack.onScan(device);
+                if (autoConnect && canConnect){
+                    //自动连接
+                    connectGatt(device);
+                }
+                return false;
+            }
+        });
+        //BLE设备扫描
         if (uuidFilter!=null && uuidFilter.length>0){
               mAdapter.startLeScan(leScanCallBack);
         }else {
@@ -228,6 +244,7 @@ public class TxBLE {
      * @param datas
      */
     public void write(byte[] datas){
+        if (mc==null){return;}
         ioLock.lock();
         mc.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         mc.setValue(datas);
@@ -239,6 +256,7 @@ public class TxBLE {
      *
      */
     public void read(){
+        if (mc==null){return;}
         ioLock.lock();
         mGatt.readCharacteristic(mc);
     }
@@ -248,6 +266,7 @@ public class TxBLE {
      * @return true 订阅成功
      */
     public boolean enableNotification(){
+        if (mc==null){return false;}
         boolean tmp;
         tmp = mGatt.setCharacteristicNotification(mc,true);
         if (tmp){
@@ -262,6 +281,7 @@ public class TxBLE {
                 }
             }
         }
+        Log.i(TAG, "enableNotification() called"+tmp);
         return tmp;
     }
 
@@ -285,21 +305,17 @@ public class TxBLE {
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             super.onServicesDiscovered(gatt, status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
+                characteristicList.clear();
                 List<BluetoothGattService> ss = gatt.getServices();
                 for (BluetoothGattService s : ss) {
-                    if (serviceUUID.length() > 0 && s.getUuid().toString().equals(serviceUUID)) {
-                        for (BluetoothGattCharacteristic c : s.getCharacteristics()) {
-                            if (c.getUuid().toString().equals(characteristicUUID)) {
-                                switch2Characteristic(c);
-                            }
-                        }
-                    }
+                    characteristicList.addAll(s.getCharacteristics());
                 }
             }
             if (connectCallBack!=null){
                 ioExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
+                        switch2Characteristic(characteristicUUID);
                         connectCallBack.connectDevice(mConnectDevice);
                     }
                 });
@@ -308,7 +324,6 @@ public class TxBLE {
 
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            ioLock.unlock();
             if (!characteristic.equals(mc)){
                 return;
             }
@@ -319,11 +334,11 @@ public class TxBLE {
                     presenter.onRead(tmp);
                 }
             });
+            ioLock.unlock();
         }
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            ioLock.unlock();
             if (!characteristic.equals(mc)){
                 return;
             }
@@ -334,6 +349,7 @@ public class TxBLE {
                     presenter.onWrite(tmp);
                 }
             });
+            ioLock.unlock();
         }
 
         @Override
@@ -356,6 +372,7 @@ public class TxBLE {
      * @param newCharacteristic
      */
     public void switch2Characteristic(BluetoothGattCharacteristic newCharacteristic){
+        ioLock.lock();
         mc=newCharacteristic;
         characteristicUUID = mc.getUuid().toString();
         if (bytesPresenterMap.containsKey(characteristicUUID)){
@@ -363,6 +380,15 @@ public class TxBLE {
         }else {
             presenter = new BytesPresenter();
         }
+        ioLock.unlock();
     }
 
+    public void switch2Characteristic(String newCharacteristic){
+        for (BluetoothGattCharacteristic bluetoothGattCharacteristic : characteristicList) {
+            if (newCharacteristic.equals(bluetoothGattCharacteristic.getUuid().toString())){
+                switch2Characteristic(bluetoothGattCharacteristic);
+                return;
+            }
+        }
+    }
 }

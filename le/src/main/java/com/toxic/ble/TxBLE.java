@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
@@ -88,7 +89,13 @@ public class TxBLE {
      *
      */
     private Executor ioExecutor = Executors.newSingleThreadExecutor();
-    private Executor presenterExecutor = Executors.newFixedThreadPool(3);
+    /**
+     * 通过单线程线程池，实现异步 不阻塞binder线程，单线程执行，队列等待 保证请求的阻塞式时序性。
+     */
+    private Executor readPresenterExecutor = Executors.newSingleThreadExecutor();
+    private Executor writePresenterExecutor = Executors.newSingleThreadExecutor();
+    private Executor notifyPresenterExecutor = Executors.newSingleThreadExecutor();
+
     /**
      * 获取线程池来自行控制读写
      * @return
@@ -236,6 +243,28 @@ public class TxBLE {
         mGatt.readCharacteristic(mc);
     }
 
+    /**
+     * 订阅广播
+     * @return true 订阅成功
+     */
+    public boolean enableNotification(){
+        boolean tmp;
+        tmp = mGatt.setCharacteristicNotification(mc,true);
+        if (tmp){
+            for(BluetoothGattDescriptor dp: mc.getDescriptors()){
+                if (dp != null) {
+                    if ((mc.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                        dp.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                    } else if ((mc.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
+                        dp.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+                    }
+                    mGatt.writeDescriptor(dp);
+                }
+            }
+        }
+        return tmp;
+    }
+
 
     private BluetoothGattCharacteristic mc;
     private BluetoothGatt mGatt;
@@ -284,7 +313,7 @@ public class TxBLE {
                 return;
             }
             final byte[] tmp = characteristic.getValue();
-            presenterExecutor.execute(new Runnable() {
+            readPresenterExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
                     presenter.onRead(tmp);
@@ -299,7 +328,7 @@ public class TxBLE {
                 return;
             }
             final byte[] tmp = characteristic.getValue();
-            presenterExecutor.execute(new Runnable() {
+            writePresenterExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
                     presenter.onWrite(tmp);
@@ -313,7 +342,7 @@ public class TxBLE {
                 return;
             }
             final byte[] tmp = characteristic.getValue();
-            presenterExecutor.execute(new Runnable() {
+            notifyPresenterExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
                     presenter.onChanged(tmp);

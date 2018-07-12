@@ -1,5 +1,11 @@
 # TxBLE
 ble test
+## why 
+you know, just for ble.
+原生ble，难用的api 伪异步，回调地狱，所以根据项目特点，封装了一份BLE操作库。  
+> ps: 非健壮性，请不要直接上手使用，根据项目特点自行改造。避免出现无法解决的bug
+
+## used
 ```java
 final TxBLE ble = TxBLE.getInstance(this, true);
                 ble.serviceUUID(sss)

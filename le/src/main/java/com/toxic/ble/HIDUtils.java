@@ -31,6 +31,9 @@ public class HIDUtils {
             if (Modifier.isStatic(mod) && Modifier.isPublic(mod)
                     && Modifier.isFinal(mod)) {
                 try {
+                    if ("HID_HOST".equals(f.getName())) {//android P
+                        return f.getInt(null);
+                    }
                     if ("INPUT_DEVICE".equals(f.getName())) {
                         return f.getInt(null);
                     }
